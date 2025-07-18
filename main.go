@@ -113,6 +113,21 @@ func (fwt *FixedWindowTrader) IsMarketOpen() (bool, error) {
 
 }
 
+func (fwt *FixedWindowTrader) waitForMarket() error {
+
+	clock, err := fwt.tradeClient.GetClock()
+
+	if err != nil {
+		return errors.New(fmt.Sprint("Could not get clock, error: ", err))
+	}
+	timeUntilOpen := time.Until(clock.NextOpen)
+	fmt.Println("Sleeping for", timeUntilOpen.Hours(), "hours until the market opens at", clock.NextOpen)
+
+	time.Sleep(timeUntilOpen)
+	return nil
+
+}
+
 func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 	is_market_open, m_err := fwt.IsMarketOpen()
 	if m_err != nil {
@@ -182,8 +197,8 @@ func main() {
 	apca_secret := os.Getenv("APCA_API_SECRET_KEY")
 	base_url := os.Getenv("APCA_API_BASE_URL")
 	//fmt.Println("apca_key:", apca_key, "apca_secret:", apca_secret) //, "base_url:", base_url)
-	TIME_WINDOW := time.Minute
-	NUM_TIMES_TRADE_PER_WINDOW := 20.0
+	TIME_WINDOW := 7 * 24 * time.Hour
+	NUM_TIMES_TRADE_PER_WINDOW := 4.0
 	time_between_trades := TIME_WINDOW.Seconds() / NUM_TIMES_TRADE_PER_WINDOW
 	time_scale := time.Second
 
@@ -212,9 +227,10 @@ func main() {
 		fmt.Println(fwt_err)
 	}
 	for {
-		time_to_sleep := time.Duration(time_between_trades) * time_scale
-		fmt.Println("Sleeping for", time_to_sleep.Seconds(), "seconds")
-		time.Sleep(time_to_sleep)
+		market_waiting_err := fwt.waitForMarket()
+		if market_waiting_err != nil {
+			fmt.Println(market_waiting_err)
+		}
 		order, order_err := fwt.Trade()
 		if order_err != nil {
 			fmt.Println("order error:", order_err)
@@ -225,7 +241,9 @@ func main() {
 			fmt.Println(time.Now(), "No trade made")
 		}
 
-		fmt.Println()
+		time_to_sleep := time.Duration(time_between_trades) * time_scale
+		fmt.Println("Sleeping for", time_to_sleep.Seconds(), "seconds")
+		time.Sleep(time_to_sleep)
 	}
 
 }
