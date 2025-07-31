@@ -145,24 +145,27 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 	if len(recent_trades) == 0 {
 		return nil, errors.New("No trades are received")
 	}
-	current_slope := (recent_trades[len(recent_trades)-1] - recent_trades[0]) / Dollar(fwt.dataClient.GetTimeWindow().Seconds())
-	fmt.Println("current slope is", current_slope)
-	acc, a_err := fwt.tradeClient.GetAccount()
-	if a_err != nil {
-		return nil, a_err
+	currentSlope := (recent_trades[len(recent_trades)-1] - recent_trades[0]) / Dollar(fwt.dataClient.GetTimeWindow().Seconds())
+	fmt.Println("current slope is", currentSlope)
+	acc, accErr := fwt.tradeClient.GetAccount()
+	if accErr != nil {
+		return nil, accErr
 	}
 
-	if current_slope >= Dollar(fwt.slopeTarget.target) && acc.BuyingPower.GreaterThanOrEqual(decimal.Zero) {
+	// the amount allocated to each trader
+	amountAvailable := acc.BuyingPower.Div(decimal.NewFromInt(int64(NumTraders)))
+
+	if currentSlope >= Dollar(fwt.slopeTarget.target) && acc.BuyingPower.GreaterThanOrEqual(decimal.Zero) {
 		// buy stonks if possible
-		if acc.BuyingPower.LessThanOrEqual(decimal.NewFromInt(1)) {
-			return nil, nil
+		if amountAvailable.LessThanOrEqual(decimal.NewFromInt(1)) {
 			fmt.Println("Not enough buying power to place an order on", fwt.symbol)
+			return nil, nil
 		}
-		order, o_err := fwt.tradeClient.PlaceOrder(alpaca.PlaceOrderRequest{
-			Symbol: fwt.symbol, Notional: &acc.BuyingPower, Type: "market", Side: "buy", TimeInForce: alpaca.TimeInForce("day"),
+		order, orderErr := fwt.tradeClient.PlaceOrder(alpaca.PlaceOrderRequest{
+			Symbol: fwt.symbol, Notional: &amountAvailable, Type: "market", Side: "buy", TimeInForce: alpaca.TimeInForce("day"),
 		})
-		if o_err != nil {
-			return nil, o_err
+		if orderErr != nil {
+			return nil, orderErr
 		}
 
 		return order, nil
@@ -177,9 +180,6 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 		}
 		return nil, p_err // actual error
 	}
-	//////	if position.QtyAvailable.GreaterThan(decimal.Zero) {
-	//return nil, nil
-	//}
 	order, o_err := fwt.tradeClient.PlaceOrder(alpaca.PlaceOrderRequest{
 		Symbol: fwt.symbol, Qty: &position.QtyAvailable, Type: "market", Side: "sell", TimeInForce: alpaca.TimeInForce("day"),
 	})
@@ -267,5 +267,6 @@ func main() {
 	for _, fwt := range fwts {
 		go RunFixedWindowTrader(fwt)
 	}
+	// waits until it gets a message from the exit channel
 	<-exitChannel
 }
