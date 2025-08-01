@@ -9,4 +9,5 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	golang.org/x/time v0.12.0 // indirect
 )

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/alpacahq/alpaca-trade-api-go/v3/marketdata"
 	"github.com/joho/godotenv"
 	"github.com/shopspring/decimal"
+	"golang.org/x/time/rate"
 )
 
 type (
@@ -129,6 +131,10 @@ func (fwt *FixedWindowTrader) waitForMarket() error {
 }
 
 func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
+	rateLimitErr := rateLimiter.Wait(context.Background())
+	if rateLimitErr != nil {
+		return nil, rateLimitErr
+	}
 	is_market_open, m_err := fwt.IsMarketOpen()
 	if m_err != nil {
 		return nil, m_err
@@ -205,9 +211,6 @@ func RunFixedWindowTrader(fwt *FixedWindowTrader) {
 			fmt.Println(time.Now(), "No trade made")
 		}
 
-		timeToSleep := time.Duration(timeBetweenTrades) * timeScale
-		fmt.Println("Sleeping for", timeToSleep.Seconds(), "seconds")
-		time.Sleep(timeToSleep)
 	}
 }
 
@@ -219,6 +222,7 @@ var (
 	NumTraders                 = len(TICKERS)
 	timeBetweenTrades          = TimeWindow.Seconds() / NUM_TIMES_TRADE_PER_WINDOW
 	timeScale                  = time.Second
+	rateLimiter                = rate.NewLimiter(rate.Every(time.Second), 10)
 )
 
 func main() {
