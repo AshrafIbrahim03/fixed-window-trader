@@ -131,7 +131,7 @@ func (fwt *FixedWindowTrader) waitForMarket() error {
 }
 
 func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
-	rateLimitErr := rateLimiter.Wait(context.Background())
+	rateLimitErr := dataRateLimiter.Wait(context.Background())
 	if rateLimitErr != nil {
 		return nil, rateLimitErr
 	}
@@ -143,6 +143,7 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 		return nil, errors.New("Not a valid time to trade or network is down")
 	}
 
+	fmt.Println("Getting info for", fwt.symbol)
 	recent_trades, t_err := fwt.dataClient.GetTrades(fwt.symbol)
 	if t_err != nil {
 		return nil, t_err
@@ -152,21 +153,27 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 		return nil, errors.New("No trades are received")
 	}
 	currentSlope := (recent_trades[len(recent_trades)-1] - recent_trades[0]) / Dollar(fwt.dataClient.GetTimeWindow().Seconds())
-	fmt.Println("current slope is", currentSlope)
+	fmt.Println("current slope for", fwt.symbol, "is", currentSlope)
 	acc, accErr := fwt.tradeClient.GetAccount()
 	if accErr != nil {
 		return nil, accErr
 	}
 
 	// the amount allocated to each trader
-	amountAvailable := acc.BuyingPower.Div(decimal.NewFromInt(int64(NumTraders)))
+	amountAvailable := acc.BuyingPower.DivRound(decimal.NewFromInt(int64(NumTraders)), 2)
 
+	fmt.Println("Starting trade decision for", fwt.symbol)
+	rateLimitErr = tradeRateLimiter.Wait(context.Background())
+	if rateLimitErr != nil {
+		return nil, rateLimitErr
+	}
 	if currentSlope >= Dollar(fwt.slopeTarget.target) && acc.BuyingPower.GreaterThanOrEqual(decimal.Zero) {
 		// buy stonks if possible
 		if amountAvailable.LessThanOrEqual(decimal.NewFromInt(1)) {
 			fmt.Println("Not enough buying power to place an order on", fwt.symbol)
 			return nil, nil
 		}
+
 		order, orderErr := fwt.tradeClient.PlaceOrder(alpaca.PlaceOrderRequest{
 			Symbol: fwt.symbol, Notional: &amountAvailable, Type: "market", Side: "buy", TimeInForce: alpaca.TimeInForce("day"),
 		})
@@ -197,10 +204,7 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 
 func RunFixedWindowTrader(fwt *FixedWindowTrader) {
 	for {
-		marketWaitingErr := fwt.waitForMarket()
-		if marketWaitingErr != nil {
-			fmt.Println(marketWaitingErr)
-		}
+
 		order, orderErr := fwt.Trade()
 		if orderErr != nil {
 			fmt.Println("order error:", orderErr)
@@ -208,9 +212,13 @@ func RunFixedWindowTrader(fwt *FixedWindowTrader) {
 		if order != nil {
 			fmt.Println(time.Now(), order.Side, order.FilledQty, "orders of ", order.Symbol, "at a price of", order.Notional)
 		} else {
-			fmt.Println(time.Now(), "No trade made")
+			fmt.Println(time.Now(), "No trade made for", fwt.symbol)
 		}
 
+		marketWaitingErr := fwt.waitForMarket()
+		if marketWaitingErr != nil {
+			fmt.Println(marketWaitingErr)
+		}
 	}
 }
 
@@ -222,7 +230,8 @@ var (
 	NumTraders                 = len(TICKERS)
 	timeBetweenTrades          = TimeWindow.Seconds() / NUM_TIMES_TRADE_PER_WINDOW
 	timeScale                  = time.Second
-	rateLimiter                = rate.NewLimiter(rate.Every(time.Second), 10)
+	dataRateLimiter            = rate.NewLimiter(rate.Every(time.Minute/200), 200)
+	tradeRateLimiter           = rate.NewLimiter(rate.Every(time.Minute/200), 200)
 )
 
 func main() {

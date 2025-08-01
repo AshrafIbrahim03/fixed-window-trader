@@ -7,3 +7,4 @@ Right now if you run it, will give you an error pertaining to pattern day tradin
 # TODO
 - [x] Add the ability to manage multiple stocks in different threads
 - [ ] Add the ability to allocate a constant amount of funds per bot or based on an algorithm
+- [x] Add a rate limiting feature
