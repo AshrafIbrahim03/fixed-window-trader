@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"sort"
 	"time"
@@ -162,7 +163,8 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 	// the amount allocated to each trader
 	amountAvailable := acc.BuyingPower.DivRound(decimal.NewFromInt(int64(NumTraders)), 2)
 
-	fmt.Println("Starting trade decision for", fwt.symbol)
+	RandomSleep()
+	fmt.Println("Starting trade decision for", fwt.symbol, "with", amountAvailable)
 	rateLimitErr = tradeRateLimiter.Wait(context.Background())
 	if rateLimitErr != nil {
 		return nil, rateLimitErr
@@ -174,14 +176,23 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 			return nil, nil
 		}
 
-		order, orderErr := fwt.tradeClient.PlaceOrder(alpaca.PlaceOrderRequest{
-			Symbol: fwt.symbol, Notional: &amountAvailable, Type: "market", Side: "buy", TimeInForce: alpaca.TimeInForce("day"),
-		})
-		if orderErr != nil {
-			return nil, orderErr
+		// Try 5 times to make the order
+		for i := range 5 {
+			fmt.Println("Try number", i, "for", fwt.symbol)
+			order, orderErr := fwt.tradeClient.PlaceOrder(alpaca.PlaceOrderRequest{
+				Symbol: fwt.symbol, Notional: &amountAvailable, Type: "market", Side: "buy", TimeInForce: alpaca.TimeInForce("day"),
+			})
+			if orderErr != nil && orderErr.(*alpaca.APIError).Code == 429 {
+			} else if orderErr != nil && orderErr.(*alpaca.APIError).Code != 429 {
+				return nil, orderErr
+			} else if orderErr == nil {
+				return order, nil
+			}
+
+			RandomSleep()
 		}
 
-		return order, nil
+		return nil, errors.New("Could not make trade")
 	}
 	// sell stonks
 	position, p_err := fwt.tradeClient.GetPosition(fwt.symbol)
@@ -210,7 +221,9 @@ func RunFixedWindowTrader(fwt *FixedWindowTrader) {
 			fmt.Println("order error:", orderErr)
 		}
 		if order != nil {
-			fmt.Println(time.Now(), order.Side, order.FilledQty, "orders of ", order.Symbol, "at a price of", order.Notional)
+			filled_amount, _ := order.FilledQty.Float64()
+			price_amount, _ := order.Notional.Float64()
+			fmt.Println(time.Now(), order.Side, filled_amount, "orders of ", order.Symbol, "at a price of", price_amount)
 		} else {
 			fmt.Println(time.Now(), "No trade made for", fwt.symbol)
 		}
@@ -230,9 +243,15 @@ var (
 	NumTraders                 = len(TICKERS)
 	timeBetweenTrades          = TimeWindow.Seconds() / NUM_TIMES_TRADE_PER_WINDOW
 	timeScale                  = time.Second
-	dataRateLimiter            = rate.NewLimiter(rate.Every(time.Minute/200), 200)
-	tradeRateLimiter           = rate.NewLimiter(rate.Every(time.Minute/200), 200)
+	RateLimit                  = 150
+	dataRateLimiter            = rate.NewLimiter(rate.Every(time.Minute/time.Duration(RateLimit)), RateLimit)
+	tradeRateLimiter           = rate.NewLimiter(rate.Every(time.Minute/time.Duration(RateLimit)), RateLimit)
 )
+
+func RandomSleep() {
+	toSleep := (20 * rand.Float64()) + 10
+	time.Sleep(time.Duration(toSleep) * time.Second)
+}
 
 func main() {
 	envErr := godotenv.Load()
@@ -279,6 +298,7 @@ func main() {
 
 	for _, fwt := range fwts {
 		go RunFixedWindowTrader(fwt)
+		time.Sleep(5 * time.Second)
 	}
 	// waits until it gets a message from the exit channel
 	<-exitChannel
