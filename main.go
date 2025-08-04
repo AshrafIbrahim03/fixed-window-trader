@@ -244,8 +244,8 @@ var (
 	timeBetweenTrades          = TimeWindow.Seconds() / NUM_TIMES_TRADE_PER_WINDOW
 	timeScale                  = time.Second
 	RateLimit                  = 150
-	dataRateLimiter            = rate.NewLimiter(rate.Every(time.Minute/time.Duration(RateLimit)), RateLimit)
-	tradeRateLimiter           = rate.NewLimiter(rate.Every(time.Minute/time.Duration(RateLimit)), RateLimit)
+	dataRateLimiter            = rate.NewLimiter(rate.Every(time.Minute/time.Duration(RateLimit)), 1)
+	tradeRateLimiter           = rate.NewLimiter(rate.Every(time.Minute/time.Duration(RateLimit)), 1)
 )
 
 func RandomSleep() {
