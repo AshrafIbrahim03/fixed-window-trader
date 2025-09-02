@@ -163,7 +163,6 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 	// the amount allocated to each trader
 	amountAvailable := acc.BuyingPower.DivRound(decimal.NewFromInt(int64(NumTraders)), 2)
 
-	RandomSleep()
 	fmt.Println("Starting trade decision for", fwt.symbol, "with", amountAvailable)
 	rateLimitErr = tradeRateLimiter.Wait(context.Background())
 	if rateLimitErr != nil {
@@ -189,7 +188,6 @@ func (fwt *FixedWindowTrader) Trade() (*alpaca.Order, error) {
 				return order, nil
 			}
 
-			RandomSleep()
 		}
 
 		return nil, errors.New("Could not make trade")
@@ -221,9 +219,18 @@ func RunFixedWindowTrader(fwt *FixedWindowTrader) {
 			fmt.Println("order error:", orderErr)
 		}
 		if order != nil {
-			filled_amount, _ := order.FilledQty.Float64()
-			price_amount, _ := order.Notional.Float64()
-			fmt.Println(time.Now(), order.Side, filled_amount, "orders of ", order.Symbol, "at a price of", price_amount)
+			filledQty := order.FilledQty
+			notional := order.Notional
+			if notional != nil {
+				filledAmount, _ := filledQty.Float64()
+				priceAmount, _ := notional.Float64()
+				fmt.Println(time.Now(), order.Side, filledAmount, "orders of ", order.Symbol, "at a price of", priceAmount)
+			} else {
+				filledQty := order.FilledQty
+				filledAmount, _ := filledQty.Float64()
+				fmt.Println(time.Now(), order.Side, filledAmount, "orders of ", order.Symbol, "at a price of", "Unkown")
+			}
+
 		} else {
 			fmt.Println(time.Now(), "No trade made for", fwt.symbol)
 		}
